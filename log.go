@@ -4,25 +4,9 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/spf13/pflag"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
-
-type (
-	Config struct {
-		IsDev    bool     `json:"is_dev" yaml:"is_dev"`
-		Level    string   `json:"level" yaml:"level"`
-		Adaptors []string `json:"adaptors,omitzero" yaml:"adaptors"`
-	}
-)
-
-func FlagSet() *pflag.FlagSet {
-	fs := pflag.NewFlagSet("log", pflag.ContinueOnError)
-	fs.Bool("log.dev", false, "use DevelopmentEncoder")
-	fs.StringSlice("log.adaptors", []string{}, "log adaptors")
-	return fs
-}
 
 func New(isDev bool, name ...string) (*zap.Logger, error) {
 	return NewWithConfig(&Config{IsDev: isDev}, name...)
