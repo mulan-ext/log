@@ -4,9 +4,9 @@ import "github.com/spf13/pflag"
 
 type (
 	Config struct {
-		IsDev    bool     `json:"is_dev" yaml:"is_dev"`
 		Level    string   `json:"level" yaml:"level"`
 		Adaptors []string `json:"adaptors,omitzero" yaml:"adaptors"`
+		IsDev    bool     `json:"is_dev" yaml:"is_dev"`
 	}
 )
 

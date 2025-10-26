@@ -14,8 +14,8 @@ import (
 
 type HTTPWriter struct {
 	buf    *bytes.Buffer
-	url    string
 	client *http.Client
+	url    string
 }
 
 func (w *HTTPWriter) Write(p []byte) (n int, err error) {
