@@ -81,7 +81,7 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 	zapLogger := zap.New(
 		zapcore.NewTee(cores...),
 		zap.AddCaller(),
-		zap.AddCallerSkip(1),
+		// zap.AddCallerSkip(1),
 		zap.AddStacktrace(zapcore.ErrorLevel),
 	)
 	if len(name) > 0 {
