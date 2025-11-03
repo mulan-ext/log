@@ -1,9 +1,183 @@
 # Mulan-Ext Log
 
-## 使用
+基于 `zap` 的日志库，支持文件滚动、HTTP 异步发送等功能。
+
+## 功能特性
+
+- ✅ 基于 `uber-go/zap` 高性能日志库
+- ✅ 支持多种输出适配器（stdout、文件、HTTP）
+- ✅ 文件自动滚动（基于大小、时间、数量）
+- ✅ HTTP 异步批量发送
+- ✅ 资源自动清理
+- ✅ 灵活的配置选项
+
+## 安装
 
 ```bash
-go get https://github.com/mulan-ext/log.git
+go get github.com/mulan-ext/log
+```
+
+## 快速开始
+
+### 基础使用
+
+```go
+package main
+
+import (
+    "github.com/mulan-ext/log"
+    "go.uber.org/zap"
+)
+
+func main() {
+    // 创建日志实例
+    logger, err := log.New(true, "my-app")
+    if err != nil {
+        panic(err)
+    }
+    defer logger.Close() // 确保资源清理
+    
+    // 使用全局 logger
+    zap.L().Info("Hello World", zap.String("key", "value"))
+}
+```
+
+### 配置使用（DSN 格式）
+
+```go
+logger, err := log.NewWithConfig(&log.Config{
+    Level:    "debug",  // 日志级别
+    IsDev:    true,     // 开发模式（彩色输出）
+    Adaptors: []string{
+        // 文件输出 DSN
+        "file:///var/log/app.log?max-size=100m&max-backups=10&max-age=30d&compress=gzip",
+        
+        // HTTP 输出 DSN
+        "http://localhost:3000/logs?timeout=10s&buffer-size=1024&batch-size=100&max-retries=3",
+    },
+})
+```
+
+## 配置说明
+
+### 基础配置
+
+| 配置项     | 类型     | 默认值   | 说明                               |
+| ---------- | -------- | -------- | ---------------------------------- |
+| `Level`    | string   | `"info"` | 日志级别：debug, info, warn, error |
+| `IsDev`    | bool     | `false`  | 开发模式（彩色控制台输出）         |
+| `Adaptors` | []string | `[]`     | 输出适配器 DSN 列表                |
+
+## 适配器 DSN 格式
+
+### 文件适配器
+
+**格式：** `file://<path>?<params>`
+
+**示例：**
+```go
+Adaptors: []string{
+    "file:///var/log/app.log",
+    "file:///var/log/app.log?max-size=100m&max-backups=10&max-age=30d&compress=gzip",
+}
+```
+
+**参数说明：**
+
+| 参数          | 类型   | 默认值 | 说明                                                      |
+| ------------- | ------ | ------ | --------------------------------------------------------- |
+| `max-size`    | string | `100m` | 文件最大大小，支持 `m`/`mb`/`g`/`gb` (如 `100m`, `1g`)    |
+| `max-backups` | int    | `10`   | 保留旧文件数量                                            |
+| `max-age`     | string | `30d`  | 保留旧文件天数，支持 `d`/`day`/`days` (如 `30d`, `7days`) |
+| `compress`    | string | `none` | 压缩格式：`gzip` 或 `none`                                |
+
+**特性：**
+- ✅ 自动创建目录
+- ✅ 基于大小自动滚动
+- ✅ 支持 gzip 压缩
+- ✅ 按时间和数量自动清理
+
+### HTTP 适配器
+
+**格式：** `http(s)://<host>/<path>?<params>`
+
+**示例：**
+```go
+Adaptors: []string{
+    "http://localhost:3000/logs",
+    "https://logs.example.com/api/v1/logs?timeout=5s&buffer-size=512&batch-size=50&max-retries=3",
+}
+```
+
+**参数说明：**
+
+| 参数          | 类型          | 默认值 | 说明                                     |
+| ------------- | ------------- | ------ | ---------------------------------------- |
+| `timeout`     | time.Duration | `10s`  | HTTP 请求超时时间 (如 `5s`, `30s`, `1m`) |
+| `buffer-size` | int           | `1024` | 异步缓冲区大小（日志条数）               |
+| `batch-size`  | int           | `100`  | 批量发送大小（每批日志条数）             |
+| `max-retries` | int           | `3`    | 最大重试次数                             |
+
+**特性：**
+- ✅ 异步批量发送
+- ✅ 自动重试机制
+- ✅ 非阻塞写入
+- ✅ 优雅关闭
+
+## 最佳实践
+
+```go
+func InitLogger() (*log.Logger, error) {
+    cfg := &log.Config{
+        Level: getEnv("LOG_LEVEL", "info"),
+        IsDev: getEnv("ENV", "prod") == "dev",
+        Adaptors: []string{
+            // 文件日志，带滚动和压缩
+            "file:///var/log/app.log?max-size=100m&max-backups=10&max-age=30d&compress=gzip",
+            
+            // 可选：发送到日志收集服务
+            // "http://logs.example.com/api/logs?timeout=5s&batch-size=100",
+        },
+    }
+    
+    return log.NewWithConfig(cfg)
+}
+
+func main() {
+    logger, err := InitLogger()
+    if err != nil {
+        panic(err)
+    }
+    defer logger.Close() // 确保资源清理
+    
+    // 业务逻辑
+}
+```
+
+### DSN 示例
+
+```go
+// 1. 基础文件输出
+"file:///var/log/app.log"
+
+// 2. 文件输出，1GB 滚动，保留 7 天
+"file:///var/log/app.log?max-size=1g&max-age=7d"
+
+// 3. 文件输出，带 gzip 压缩
+"file:///var/log/app.log?max-size=50m&compress=gzip"
+
+// 4. HTTP 输出，基础配置
+"http://localhost:3000/logs"
+
+// 5. HTTPS 输出，自定义参数
+"https://logs.example.com/api/v1/logs?timeout=5s&buffer-size=512&batch-size=50&max-retries=5"
+
+// 6. 多个适配器
+Adaptors: []string{
+    "file:///var/log/app.log?max-size=100m&compress=gzip",
+    "file:///var/log/error.log?max-size=50m",  // 错误日志单独文件
+    "http://logs.example.com/api/logs?batch-size=100",
+}
 ```
 
 ## 许可证
