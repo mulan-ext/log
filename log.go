@@ -3,8 +3,8 @@ package log
 import (
 	"fmt"
 	"io"
-	"net/url"
 	"os"
+	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -34,13 +34,13 @@ func (l *Logger) Close() error {
 
 // New 创建日志实例（简化版）
 func New(isDev bool, name ...string) (*Logger, error) {
-	return NewWithConfig(&Config{IsDev: isDev, Level: "info"}, name...)
+	return NewWithConfig(&Config{Level: "info"}, name...)
 }
 
 // NewWithConfig 根据配置创建日志实例
 func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 	if cfg == nil {
-		cfg = &Config{IsDev: false, Level: "info"}
+		cfg = &Config{Level: "info"}
 	}
 	var err error
 	var lvl zapcore.Level
@@ -52,16 +52,26 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 			return nil, fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
 		}
 	}
-	encoder := createEncoder(cfg.IsDev)
+	// Console 输出
+	consoleCfg := zap.NewDevelopmentEncoderConfig()
+	consoleCfg.EncodeTime = DefaultTimeEncoder
+	consoleCfg.EncodeDuration = zapcore.StringDurationEncoder
+	consoleCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	consoleEncoder := zapcore.NewConsoleEncoder(consoleCfg)
+	// Adaptors 输出
+	adaptorCfg := zap.NewDevelopmentEncoderConfig()
+	adaptorCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
+	adaptorCfg.EncodeDuration = zapcore.StringDurationEncoder
+	adaptorEncoder := zapcore.NewJSONEncoder(adaptorCfg)
 	// 默认输出到 stdout
 	cores := []zapcore.Core{
-		zapcore.NewCore(encoder, zapcore.Lock(os.Stdout), lvl),
+		zapcore.NewCore(consoleEncoder, zapcore.Lock(os.Stdout), lvl),
 	}
 	var closers []io.Closer
 	// 处理额外的适配器
 	if len(cfg.Adaptors) > 0 {
 		for _, adaptorDSN := range cfg.Adaptors {
-			core, closer, err := createAdaptorCore(adaptorDSN, encoder, lvl)
+			core, closer, err := createAdaptorCore(adaptorDSN, adaptorEncoder, lvl)
 			if err != nil {
 				if closer != nil {
 					_ = closer.Close()
@@ -91,31 +101,13 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 	return &Logger{Logger: zapLogger, closers: closers}, nil
 }
 
-// createEncoder 创建编码器
-func createEncoder(isDev bool) zapcore.Encoder {
-	var encoderCfg zapcore.EncoderConfig
-	if isDev {
-		encoderCfg = zap.NewDevelopmentEncoderConfig()
-		encoderCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	} else {
-		encoderCfg = zap.NewProductionEncoderConfig()
-		encoderCfg.EncodeLevel = zapcore.LowercaseLevelEncoder
-	}
-	encoderCfg.EncodeTime = DefaultTimeEncoder
-	encoderCfg.EncodeDuration = zapcore.StringDurationEncoder
-	if isDev {
-		return zapcore.NewConsoleEncoder(encoderCfg)
-	}
-	return zapcore.NewJSONEncoder(encoderCfg)
-}
-
 // createAdaptorCore 根据 DSN 创建对应的 Core
 func createAdaptorCore(dsn string, encoder zapcore.Encoder, lvl zapcore.Level) (zapcore.Core, io.Closer, error) {
-	parsedURL, err := url.Parse(dsn)
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid adaptor DSN: %w", err)
+	schema, _, ok := strings.Cut(dsn, "://")
+	if !ok {
+		return nil, nil, fmt.Errorf("invalid adaptor DSN: %s", dsn)
 	}
-	switch parsedURL.Scheme {
+	switch schema {
 	case "file":
 		opts, err := parseFileOptions(dsn)
 		if err != nil {
@@ -125,8 +117,11 @@ func createAdaptorCore(dsn string, encoder zapcore.Encoder, lvl zapcore.Level) (
 		if err != nil {
 			return nil, nil, err
 		}
+		if opts.Level != lvl {
+			lvl = opts.Level
+		}
 		return zapcore.NewCore(encoder, writer, lvl), closer, nil
-	case "http", "https":
+	case "http":
 		opts, err := parseHTTPOptions(dsn)
 		if err != nil {
 			return nil, nil, err
@@ -135,8 +130,11 @@ func createAdaptorCore(dsn string, encoder zapcore.Encoder, lvl zapcore.Level) (
 		if err != nil {
 			return nil, nil, err
 		}
+		if opts.Level != lvl {
+			lvl = opts.Level
+		}
 		return zapcore.NewCore(encoder, writer, lvl), closer, nil
 	default:
-		return nil, nil, fmt.Errorf("unsupported scheme: %s", parsedURL.Scheme)
+		return nil, nil, fmt.Errorf("unsupported scheme: %s", schema)
 	}
 }

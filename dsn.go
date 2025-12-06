@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -21,6 +23,7 @@ type FileOptions struct {
 	MaxSize    int
 	MaxBackups int
 	MaxAge     int
+	Level      zapcore.Level
 }
 
 // HTTPOptions HTTP 适配器选项
@@ -30,6 +33,7 @@ type HTTPOptions struct {
 	BufferSize int           // 缓冲区大小
 	BatchSize  int           // 批量发送大小
 	MaxRetries int           // 最大重试次数
+	Level      zapcore.Level
 }
 
 // parseFileOptions 解析文件适配器 DSN
@@ -44,10 +48,11 @@ func parseFileOptions(dsn string) (*FileOptions, error) {
 	}
 	opts := &FileOptions{
 		Path:       u.Path,
-		MaxSize:    100,    // 默认 100MB
-		MaxBackups: 10,     // 默认保留 10 个
-		MaxAge:     30,     // 默认保留 30 天
-		Compress:   "none", // 默认不压缩
+		MaxSize:    100,               // 默认 100MB
+		MaxBackups: 10,                // 默认保留 10 个
+		MaxAge:     30,                // 默认保留 30 天
+		Compress:   "none",            // 默认不压缩
+		Level:      zapcore.InfoLevel, // 默认 info 级别
 	}
 	query := u.Query()
 	// 解析 max-size
@@ -81,6 +86,14 @@ func parseFileOptions(dsn string) (*FileOptions, error) {
 		}
 		opts.Compress = v
 	}
+	// 解析 level
+	if v := query.Get("level"); v != "" {
+		lvl, err := zapcore.ParseLevel(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid level: %w", err)
+		}
+		opts.Level = lvl
+	}
 	return opts, nil
 }
 
@@ -105,10 +118,11 @@ func parseHTTPOptions(dsn string) (*HTTPOptions, error) {
 
 	opts := &HTTPOptions{
 		URL:        baseURL.String(),
-		Timeout:    10 * time.Second, // 默认 10s
-		BufferSize: 1024,             // 默认 1024 条
-		BatchSize:  100,              // 默认 100 条
-		MaxRetries: 3,                // 默认重试 3 次
+		Timeout:    10 * time.Second,  // 默认 10s
+		BufferSize: 1024,              // 默认 1024 条
+		BatchSize:  100,               // 默认 100 条
+		MaxRetries: 3,                 // 默认重试 3 次
+		Level:      zapcore.InfoLevel, // 默认 info 级别
 	}
 
 	query := u.Query()
@@ -149,6 +163,14 @@ func parseHTTPOptions(dsn string) (*HTTPOptions, error) {
 		opts.MaxRetries = retries
 	}
 
+	// 解析 level
+	if v := query.Get("level"); v != "" {
+		lvl, err := zapcore.ParseLevel(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid level: %w", err)
+		}
+		opts.Level = lvl
+	}
 	return opts, nil
 }
 

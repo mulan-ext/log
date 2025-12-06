@@ -11,33 +11,40 @@ import (
 	"go.uber.org/zap"
 )
 
+func logPrint() {
+	zap.L().Info("test info")
+	zap.L().Warn("test warn")
+	zap.L().Error("test error")
+	zap.L().Debug("test debug")
+	zap.L().Info("test info", zap.String("aa", "awdvews"))
+	zap.L().Warn("test warn", zap.String("aa", "awdvews"))
+	zap.L().Error("test error", zap.String("aa", "awdvews"))
+	zap.L().Debug("test debug", zap.String("aa", "awdvews"))
+}
+
 func TestLog(t *testing.T) {
+	logger, err := log.NewWithConfig(&log.Config{Level: "info"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+
+	logPrint()
+}
+
+func TestLogDebug(t *testing.T) {
 	logger, err := log.NewWithConfig(&log.Config{Level: "debug"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer logger.Close()
 
-	zap.L().Info("test")
-	zap.L().Info("testaaaaaaaaaaa")
-	zap.L().Info("testaaaa", zap.String("aa", "awdvews"))
-}
-
-func TestLogDebug(t *testing.T) {
-	logger, err := log.NewWithConfig(&log.Config{IsDev: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer logger.Close()
-
-	zap.L().Info("test")
-	zap.L().Info("testaaaaaaaaaaa")
-	zap.L().Debug("testaaaaaargverasrfesaaaaaa")
+	logPrint()
 }
 
 func TestLogFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	logFile := filepath.Join(tmpDir, "test.log")
+	logFile := filepath.Join(tmpDir, "_test.log")
 	t.Log("log file:", logFile)
 
 	logger, err := log.NewWithConfig(&log.Config{
@@ -49,19 +56,51 @@ func TestLogFile(t *testing.T) {
 	}
 	defer logger.Close()
 
-	zap.L().Info("test")
-	zap.L().Info("testaaaaaaaaaaa")
-	zap.L().Info("testaaaaaargverasrfesaaaaaa")
+	logPrint()
 
 	// 验证文件是否存在
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
 		t.Error("log file not created")
 	}
+
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("log file content:", string(content))
+}
+
+func TestLogFileLevel(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "_test.log")
+	t.Log("log file:", logFile)
+
+	logger, err := log.NewWithConfig(&log.Config{
+		Level:    "info",
+		Adaptors: []string{"file://" + logFile + "?level=debug"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+
+	logPrint()
+
+	// 验证文件是否存在
+	if _, err := os.Stat(logFile); os.IsNotExist(err) {
+		t.Error("log file not created")
+	}
+
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("log file content:", string(content))
 }
 
 func TestLogFileDSN(t *testing.T) {
 	tmpDir := t.TempDir()
-	logFile := filepath.Join(tmpDir, "test.log")
+	logFile := filepath.Join(tmpDir, "_test.log")
 
 	// 使用 DSN 格式配置
 	dsn := fmt.Sprintf("file://%s?max-size=10m&max-backups=5&max-age=7d&compress=gzip", logFile)
@@ -76,7 +115,7 @@ func TestLogFileDSN(t *testing.T) {
 	}
 	defer logger.Close()
 
-	zap.L().Info("test DSN configuration")
+	logPrint()
 
 	// 验证文件是否存在
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
@@ -101,7 +140,7 @@ func TestLogFileRotation(t *testing.T) {
 	defer logger.Close()
 
 	// 写入大量日志触发滚动
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		zap.L().Info("test log rotation", zap.Int("iteration", i))
 	}
 
@@ -123,10 +162,7 @@ func TestLogHTTP(t *testing.T) {
 	}
 	defer logger.Close()
 
-	zap.L().Info("test")
-	zap.L().Info("testaaaaaaaaaaa")
-	zap.L().Info("testaaaaaargverasrfesaaaaaa")
-
+	logPrint()
 	// 等待异步发送完成
 	time.Sleep(2 * time.Second)
 }
@@ -138,7 +174,7 @@ func TestLogWithName(t *testing.T) {
 	}
 	defer logger.Close()
 
-	zap.L().Info("test with service name")
+	logPrint()
 }
 
 func TestLogInvalidLevel(t *testing.T) {
@@ -165,7 +201,7 @@ func TestLogMultipleAdaptors(t *testing.T) {
 	}
 	defer logger.Close()
 
-	zap.L().Info("test multiple adaptors")
+	logPrint()
 
 	// 验证两个文件都被创建
 	if _, err := os.Stat(logFile1); os.IsNotExist(err) {
