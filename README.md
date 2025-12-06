@@ -47,7 +47,6 @@ func main() {
 ```go
 logger, err := log.NewWithConfig(&log.Config{
     Level:    "debug",  // 日志级别
-    IsDev:    true,     // 开发模式（彩色输出）
     Adaptors: []string{
         // 文件输出 DSN
         "file:///var/log/app.log?max-size=100m&max-backups=10&max-age=30d&compress=gzip",
@@ -65,7 +64,6 @@ logger, err := log.NewWithConfig(&log.Config{
 | 配置项     | 类型     | 默认值   | 说明                               |
 | ---------- | -------- | -------- | ---------------------------------- |
 | `Level`    | string   | `"info"` | 日志级别：debug, info, warn, error |
-| `IsDev`    | bool     | `false`  | 开发模式（彩色控制台输出）         |
 | `Adaptors` | []string | `[]`     | 输出适配器 DSN 列表                |
 
 ## 适配器 DSN 格式
@@ -130,7 +128,6 @@ Adaptors: []string{
 func InitLogger() (*log.Logger, error) {
     cfg := &log.Config{
         Level: getEnv("LOG_LEVEL", "info"),
-        IsDev: getEnv("ENV", "prod") == "dev",
         Adaptors: []string{
             // 文件日志，带滚动和压缩
             "file:///var/log/app.log?max-size=100m&max-backups=10&max-age=30d&compress=gzip",
