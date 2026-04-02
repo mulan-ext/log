@@ -52,24 +52,23 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 			return nil, fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
 		}
 	}
-	// Console 输出
-	var consoleEncoder zapcore.Encoder
-	consoleCfg := zap.NewDevelopmentEncoderConfig()
-	consoleCfg.EncodeDuration = zapcore.StringDurationEncoder
-	if cfg.JSON {
-		consoleCfg.EncodeTime = DefaultTimeEncoder
-		consoleCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		consoleEncoder = zapcore.NewJSONEncoder(consoleCfg)
-	} else {
-		consoleCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
-		consoleCfg.EncodeLevel = zapcore.CapitalLevelEncoder
-		consoleEncoder = zapcore.NewConsoleEncoder(consoleCfg)
-	}
+
 	// Adaptors 输出
 	adaptorCfg := zap.NewDevelopmentEncoderConfig()
 	adaptorCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
 	adaptorCfg.EncodeDuration = zapcore.StringDurationEncoder
 	adaptorEncoder := zapcore.NewJSONEncoder(adaptorCfg)
+	// Console 输出
+	var consoleEncoder zapcore.Encoder
+	if cfg.JSON {
+		consoleEncoder = zapcore.NewJSONEncoder(adaptorCfg)
+	} else {
+		consoleCfg := zap.NewDevelopmentEncoderConfig()
+		consoleCfg.EncodeDuration = zapcore.StringDurationEncoder
+		consoleCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
+		consoleCfg.EncodeLevel = zapcore.CapitalLevelEncoder
+		consoleEncoder = zapcore.NewConsoleEncoder(consoleCfg)
+	}
 	// 默认输出到 stdout
 	cores := []zapcore.Core{
 		zapcore.NewCore(consoleEncoder, zapcore.Lock(os.Stdout), lvl),
