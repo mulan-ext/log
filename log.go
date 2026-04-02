@@ -53,11 +53,18 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 		}
 	}
 	// Console 输出
+	var consoleEncoder zapcore.Encoder
 	consoleCfg := zap.NewDevelopmentEncoderConfig()
-	consoleCfg.EncodeTime = DefaultTimeEncoder
 	consoleCfg.EncodeDuration = zapcore.StringDurationEncoder
-	consoleCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	consoleEncoder := zapcore.NewConsoleEncoder(consoleCfg)
+	if cfg.JSON {
+		consoleCfg.EncodeTime = DefaultTimeEncoder
+		consoleCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		consoleEncoder = zapcore.NewJSONEncoder(consoleCfg)
+	} else {
+		consoleCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
+		consoleCfg.EncodeLevel = zapcore.CapitalLevelEncoder
+		consoleEncoder = zapcore.NewConsoleEncoder(consoleCfg)
+	}
 	// Adaptors 输出
 	adaptorCfg := zap.NewDevelopmentEncoderConfig()
 	adaptorCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
