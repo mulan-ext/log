@@ -10,11 +10,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var (
-	// DefaultTimeEncoder 默认时间编码器
-	DefaultTimeEncoder = zapcore.TimeEncoderOfLayout("2006-01-02T15:04:05.000")
-)
-
 // Logger 包装 zap.Logger，提供清理功能
 type Logger struct {
 	*zap.Logger
@@ -33,7 +28,7 @@ func (l *Logger) Close() error {
 }
 
 // New 创建日志实例（简化版）
-func New(isDev bool, name ...string) (*Logger, error) {
+func New(name ...string) (*Logger, error) {
 	return NewWithConfig(&Config{Level: "info"}, name...)
 }
 
@@ -52,7 +47,6 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 			return nil, fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
 		}
 	}
-
 	// Adaptors 输出
 	adaptorCfg := zap.NewDevelopmentEncoderConfig()
 	adaptorCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
@@ -66,7 +60,7 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 		consoleCfg := zap.NewDevelopmentEncoderConfig()
 		consoleCfg.EncodeDuration = zapcore.StringDurationEncoder
 		consoleCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
-		consoleCfg.EncodeLevel = zapcore.CapitalLevelEncoder
+		consoleCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
 		consoleEncoder = zapcore.NewConsoleEncoder(consoleCfg)
 	}
 	// 默认输出到 stdout

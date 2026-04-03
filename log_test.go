@@ -168,7 +168,7 @@ func TestLogHTTP(t *testing.T) {
 }
 
 func TestLogWithName(t *testing.T) {
-	logger, err := log.New(true, "my-service")
+	logger, err := log.New("my-service")
 	if err != nil {
 		t.Fatal(err)
 	}
