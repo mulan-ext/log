@@ -16,6 +16,17 @@ type Logger struct {
 	closers []io.Closer
 }
 
+type MultiHandler struct {
+	cores   []zapcore.Core
+	closers []io.Closer
+}
+
+type resolvedConfig struct {
+	level        zapcore.Level
+	consoleLevel zapcore.Level
+	format       string
+}
+
 // Close 关闭所有资源
 func (l *Logger) Close() error {
 	var firstErr error
@@ -37,68 +48,130 @@ func NewWithConfig(cfg *Config, name ...string) (*Logger, error) {
 	if cfg == nil {
 		cfg = &Config{Level: "info"}
 	}
-	var err error
-	var lvl zapcore.Level
-	if cfg.Level == "" {
-		lvl = zapcore.InfoLevel
-	} else {
-		lvl, err = zapcore.ParseLevel(cfg.Level)
-		if err != nil {
-			return nil, fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
-		}
+
+	resolved, err := resolveConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
-	// Adaptors 输出
-	adaptorCfg := zap.NewDevelopmentEncoderConfig()
-	adaptorCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
-	adaptorCfg.EncodeDuration = zapcore.StringDurationEncoder
-	adaptorEncoder := zapcore.NewJSONEncoder(adaptorCfg)
-	// Console 输出
-	var consoleEncoder zapcore.Encoder
-	if cfg.JSON {
-		consoleEncoder = zapcore.NewJSONEncoder(adaptorCfg)
-	} else {
-		consoleCfg := zap.NewDevelopmentEncoderConfig()
-		consoleCfg.EncodeDuration = zapcore.StringDurationEncoder
-		consoleCfg.EncodeTime = zapcore.EpochMillisTimeEncoder
-		consoleCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		consoleEncoder = zapcore.NewConsoleEncoder(consoleCfg)
+
+	handler, err := newMultiHandler(cfg, resolved)
+	if err != nil {
+		return nil, err
 	}
-	// 默认输出到 stdout
-	cores := []zapcore.Core{
-		zapcore.NewCore(consoleEncoder, zapcore.Lock(os.Stdout), lvl),
-	}
-	var closers []io.Closer
-	// 处理额外的适配器
-	if len(cfg.Adaptors) > 0 {
-		for _, adaptorDSN := range cfg.Adaptors {
-			core, closer, err := createAdaptorCore(adaptorDSN, adaptorEncoder, lvl)
-			if err != nil {
-				if closer != nil {
-					_ = closer.Close()
-				}
-				continue
-			}
-			cores = append(cores, core)
-			if closer != nil {
-				closers = append(closers, closer)
-			}
-		}
-		// 如果有，则至少创建一个适配器
-		if len(cores) == 0 {
-			return nil, fmt.Errorf("no adaptors created")
-		}
-	}
+
 	zapLogger := zap.New(
-		zapcore.NewTee(cores...),
+		zapcore.NewTee(handler.cores...),
 		zap.AddCaller(),
 		zap.AddStacktrace(zapcore.ErrorLevel),
 	)
-	zapLogger.WithOptions(zap.AddCallerSkip(cfg.Skip))
+	zapLogger = zapLogger.WithOptions(zap.AddCallerSkip(cfg.Skip))
 	if len(name) > 0 {
 		zapLogger = zapLogger.Named(name[0]).With(zap.String("service", name[0]))
 	}
 	zap.ReplaceGlobals(zapLogger)
-	return &Logger{Logger: zapLogger, closers: closers}, nil
+	return &Logger{Logger: zapLogger, closers: handler.closers}, nil
+}
+
+func resolveConfig(cfg *Config) (resolvedConfig, error) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
+	format := strings.ToLower(strings.TrimSpace(cfg.Format))
+	defaultLevel := zapcore.InfoLevel
+
+	switch mode {
+	case "", "server", "prod", "production":
+		if format == "" && mode != "" {
+			format = "json"
+		}
+	case "local", "dev", "development", "debug":
+		defaultLevel = zapcore.DebugLevel
+		if format == "" {
+			format = "console"
+		}
+	default:
+		return resolvedConfig{}, fmt.Errorf("invalid log mode %q", cfg.Mode)
+	}
+
+	if cfg.JSON && format == "" {
+		format = "json"
+	}
+	if format == "" {
+		format = "console"
+	}
+	if format != "console" && format != "json" {
+		return resolvedConfig{}, fmt.Errorf("invalid log format %q", cfg.Format)
+	}
+
+	level, err := parseLevelOrDefault(cfg.Level, defaultLevel)
+	if err != nil {
+		return resolvedConfig{}, fmt.Errorf("invalid log level %q: %w", cfg.Level, err)
+	}
+
+	consoleLevel, err := parseLevelOrDefault(cfg.ConsoleLevel, level)
+	if err != nil {
+		return resolvedConfig{}, fmt.Errorf("invalid console log level %q: %w", cfg.ConsoleLevel, err)
+	}
+
+	return resolvedConfig{
+		level:        level,
+		consoleLevel: consoleLevel,
+		format:       format,
+	}, nil
+}
+
+func parseLevelOrDefault(level string, fallback zapcore.Level) (zapcore.Level, error) {
+	if strings.TrimSpace(level) == "" {
+		return fallback, nil
+	}
+	return zapcore.ParseLevel(level)
+}
+
+func newMultiHandler(cfg *Config, resolved resolvedConfig) (*MultiHandler, error) {
+	adaptorEncoder := zapcore.NewJSONEncoder(jsonEncoderConfig())
+	consoleEncoder := newConsoleEncoder(resolved.format)
+
+	handler := &MultiHandler{
+		cores: []zapcore.Core{
+			zapcore.NewCore(consoleEncoder, zapcore.Lock(os.Stdout), resolved.consoleLevel),
+		},
+	}
+
+	for _, adaptorDSN := range cfg.Adaptors {
+		core, closer, err := createAdaptorCore(adaptorDSN, adaptorEncoder, resolved.level)
+		if err != nil {
+			if closer != nil {
+				_ = closer.Close()
+			}
+			continue
+		}
+		handler.cores = append(handler.cores, core)
+		if closer != nil {
+			handler.closers = append(handler.closers, closer)
+		}
+	}
+
+	return handler, nil
+}
+
+func jsonEncoderConfig() zapcore.EncoderConfig {
+	cfg := zap.NewProductionEncoderConfig()
+	cfg.EncodeTime = zapcore.EpochMillisTimeEncoder
+	cfg.EncodeDuration = zapcore.StringDurationEncoder
+	return cfg
+}
+
+func consoleEncoderConfig() zapcore.EncoderConfig {
+	cfg := zap.NewDevelopmentEncoderConfig()
+	cfg.EncodeDuration = zapcore.StringDurationEncoder
+	cfg.EncodeTime = zapcore.EpochMillisTimeEncoder
+	cfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	return cfg
+}
+
+func newConsoleEncoder(format string) zapcore.Encoder {
+	if format == "json" {
+		return zapcore.NewJSONEncoder(jsonEncoderConfig())
+	}
+	return zapcore.NewConsoleEncoder(consoleEncoderConfig())
 }
 
 // createAdaptorCore 根据 DSN 创建对应的 Core
@@ -117,7 +190,7 @@ func createAdaptorCore(dsn string, encoder zapcore.Encoder, lvl zapcore.Level) (
 		if err != nil {
 			return nil, nil, err
 		}
-		if opts.Level != lvl {
+		if opts.LevelSet {
 			lvl = opts.Level
 		}
 		return zapcore.NewCore(encoder, writer, lvl), closer, nil
@@ -130,7 +203,7 @@ func createAdaptorCore(dsn string, encoder zapcore.Encoder, lvl zapcore.Level) (
 		if err != nil {
 			return nil, nil, err
 		}
-		if opts.Level != lvl {
+		if opts.LevelSet {
 			lvl = opts.Level
 		}
 		return zapcore.NewCore(encoder, writer, lvl), closer, nil

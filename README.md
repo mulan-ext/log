@@ -31,7 +31,7 @@ import (
 
 func main() {
     // 创建日志实例
-    logger, err := log.New(true, "my-app")
+    logger, err := log.New("my-app")
     if err != nil {
         panic(err)
     }
@@ -57,14 +57,66 @@ logger, err := log.NewWithConfig(&log.Config{
 })
 ```
 
+### 本地调试输出
+
+本地模式默认使用彩色 console 输出，并把默认级别设为 `debug`：
+
+```go
+logger, err := log.NewWithConfig(&log.Config{
+    Mode: "local",
+})
+```
+
+也可以显式指定控制台级别：
+
+```go
+logger, err := log.NewWithConfig(&log.Config{
+    Mode:         "local",
+    ConsoleLevel: "debug",
+})
+```
+
+### 服务端 JSON 输出
+
+服务端模式默认使用 JSON 输出，并把默认级别设为 `info`：
+
+```go
+logger, err := log.NewWithConfig(&log.Config{
+    Mode: "server",
+})
+```
+
+服务端常见配置示例：
+
+```go
+logger, err := log.NewWithConfig(&log.Config{
+    Mode:         "server",
+    Level:        "info",
+    ConsoleLevel: "info",
+    Adaptors: []string{
+        "file:///var/log/app.log?max-size=100m&max-age=30d",
+    },
+})
+```
+
 ## 配置说明
 
 ### 基础配置
 
-| 配置项     | 类型     | 默认值   | 说明                               |
-| ---------- | -------- | -------- | ---------------------------------- |
-| `Level`    | string   | `"info"` | 日志级别：debug, info, warn, error |
-| `Adaptors` | []string | `[]`     | 输出适配器 DSN 列表                |
+| 配置项         | 类型     | 默认值      | 说明                                        |
+| -------------- | -------- | ----------- | ------------------------------------------- |
+| `Mode`         | string   | `""`        | 运行模式：`local`, `server`                 |
+| `Level`        | string   | `"info"`    | 默认日志级别：debug, info, warn, error      |
+| `ConsoleLevel` | string   | 继承 `Level` | 控制台日志级别                              |
+| `Format`       | string   | `"console"` | 控制台格式：`console`, `json`               |
+| `JSON`         | bool     | `false`     | 兼容旧配置；为 true 时控制台输出 JSON       |
+| `Adaptors`     | []string | `[]`        | 输出适配器 DSN 列表                         |
+
+级别规则：
+
+- 控制台默认使用 `ConsoleLevel`，未设置时继承 `Level`。
+- 文件和 HTTP 适配器默认继承 `Level`。
+- 文件和 HTTP DSN 可通过 `?level=debug` 之类的参数覆盖自己的输出级别。
 
 ## 适配器 DSN 格式
 
@@ -88,6 +140,7 @@ Adaptors: []string{
 | `max-backups` | int    | `10`   | 保留旧文件数量                                            |
 | `max-age`     | string | `30d`  | 保留旧文件天数，支持 `d`/`day`/`days` (如 `30d`, `7days`) |
 | `compress`    | string | `none` | 压缩格式：`gzip` 或 `none`                                |
+| `level`       | string | 继承全局 | 当前文件适配器的日志级别                                  |
 
 **特性：**
 - ✅ 自动创建目录
@@ -115,6 +168,7 @@ Adaptors: []string{
 | `buffer-size` | int           | `1024` | 异步缓冲区大小（日志条数）               |
 | `batch-size`  | int           | `100`  | 批量发送大小（每批日志条数）             |
 | `max-retries` | int           | `3`    | 最大重试次数                             |
+| `level`       | string        | 继承全局 | 当前 HTTP 适配器的日志级别               |
 
 **特性：**
 - ✅ 异步批量发送

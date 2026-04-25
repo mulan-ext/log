@@ -24,6 +24,7 @@ type FileOptions struct {
 	MaxBackups int
 	MaxAge     int
 	Level      zapcore.Level
+	LevelSet   bool
 }
 
 // HTTPOptions HTTP 适配器选项
@@ -34,6 +35,7 @@ type HTTPOptions struct {
 	BatchSize  int           // 批量发送大小
 	MaxRetries int           // 最大重试次数
 	Level      zapcore.Level
+	LevelSet   bool
 }
 
 // parseFileOptions 解析文件适配器 DSN
@@ -93,6 +95,7 @@ func parseFileOptions(dsn string) (*FileOptions, error) {
 			return nil, fmt.Errorf("invalid level: %w", err)
 		}
 		opts.Level = lvl
+		opts.LevelSet = true
 	}
 	return opts, nil
 }
@@ -170,6 +173,7 @@ func parseHTTPOptions(dsn string) (*HTTPOptions, error) {
 			return nil, fmt.Errorf("invalid level: %w", err)
 		}
 		opts.Level = lvl
+		opts.LevelSet = true
 	}
 	return opts, nil
 }

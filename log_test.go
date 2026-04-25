@@ -1,15 +1,45 @@
 package log_test
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mulan-ext/log"
 	"go.uber.org/zap"
 )
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = writer
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = oldStdout
+
+	out, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
 
 func logPrint() {
 	zap.L().Info("test info")
@@ -20,6 +50,58 @@ func logPrint() {
 	zap.L().Warn("test warn", zap.String("aa", "awdvews"))
 	zap.L().Error("test error", zap.String("aa", "awdvews"))
 	zap.L().Debug("test debug", zap.String("aa", "awdvews"))
+}
+
+func TestLocalModeConsoleOutputIsColorizedAndDebug(t *testing.T) {
+	output := captureStdout(t, func() {
+		logger, err := log.NewWithConfig(&log.Config{Mode: "local"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer logger.Close()
+
+		zap.L().Debug("local debug")
+		_ = logger.Sync()
+	})
+
+	if !strings.Contains(output, "local debug") {
+		t.Fatalf("expected debug log in local output, got %q", output)
+	}
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected color escape sequence in local output, got %q", output)
+	}
+}
+
+func TestServerModeConsoleOutputIsJSONAndInfo(t *testing.T) {
+	output := captureStdout(t, func() {
+		logger, err := log.NewWithConfig(&log.Config{Mode: "server"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer logger.Close()
+
+		zap.L().Debug("server debug")
+		zap.L().Info("server info", zap.String("component", "api"))
+		_ = logger.Sync()
+	})
+
+	if strings.Contains(output, "server debug") {
+		t.Fatalf("expected server debug log to be filtered, got %q", output)
+	}
+
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &entry); err != nil {
+		t.Fatalf("expected JSON log output, got %q: %v", output, err)
+	}
+	if entry["level"] != "info" {
+		t.Fatalf("expected info level, got %#v", entry["level"])
+	}
+	if entry["msg"] != "server info" {
+		t.Fatalf("expected server info message, got %#v", entry["msg"])
+	}
+	if entry["component"] != "api" {
+		t.Fatalf("expected component field, got %#v", entry["component"])
+	}
 }
 
 func TestLog(t *testing.T) {
@@ -96,6 +178,58 @@ func TestLogFileLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("log file content:", string(content))
+}
+
+func TestLogFileInheritsGlobalLevel(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "_test.log")
+
+	logger, err := log.NewWithConfig(&log.Config{
+		Level:    "debug",
+		JSON:     true,
+		Adaptors: []string{"file://" + logFile},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+
+	zap.L().Debug("file inherited debug")
+	_ = logger.Sync()
+
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "file inherited debug") {
+		t.Fatalf("expected file adaptor to inherit debug level, got %q", string(content))
+	}
+}
+
+func TestLogFileLevelOverridesGlobalLevel(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "_test.log")
+
+	logger, err := log.NewWithConfig(&log.Config{
+		Level:    "info",
+		JSON:     true,
+		Adaptors: []string{"file://" + logFile + "?level=debug"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logger.Close()
+
+	zap.L().Debug("file override debug")
+	_ = logger.Sync()
+
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "file override debug") {
+		t.Fatalf("expected file adaptor to use debug override, got %q", string(content))
+	}
 }
 
 func TestLogFileDSN(t *testing.T) {
